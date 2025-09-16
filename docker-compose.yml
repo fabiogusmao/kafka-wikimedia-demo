@@ -1,5 +1,5 @@
 networks:
-  kafka-wikimedia:   # custom network
+  kafka-wikimedia:
     driver: bridge
 services:
   kafka:
@@ -37,6 +37,45 @@ services:
       - kafka-ui:/etc/kafkaui/
     networks:
       - kafka-wikimedia
+
+  opensearch:
+    image: opensearchproject/opensearch:3
+    container_name: opensearch
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536  # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - 9200:9200
+      - 9600:9600
+    networks:
+      - kafka-wikimedia
+  
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:3
+    container_name: opensearch-dashboards
+    ports:
+      - 5601:5601
+    expose:
+      - '5601'
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'      
+      OPENSEARCH_SSL_VERIFICATIONMODE: none
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: true 
+    networks:
+      - kafka-wikimedia
+
 volumes:
   kafka_data:
   kafka-ui:
+  opensearch-data:
