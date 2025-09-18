@@ -3,6 +3,7 @@ package wikimedia.consumer;
 import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
@@ -18,14 +19,19 @@ import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBui
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
+
 public class App {
     private static final String BOOTSTRAP_SERVERS = "localhost:9092";
     private static final String TOPIC = "wikimedia.recentchange";
     private static final String OPENSEARCH_HOST = "http://localhost:9200";
 
     private static final Logger _logger = LoggerFactory.getLogger(App.class.getSimpleName());
+    private static final Gson gson = new Gson();
 
-    public static void main(String[] args) throws URISyntaxException {
+    public static void main(String[] args) throws URISyntaxException, JsonSyntaxException, InterruptedException {
         _logger.info("Welcome to Wikimedia Producer!");
 
         Properties properties = new Properties();
@@ -39,7 +45,6 @@ public class App {
 
         OpenSearchClient openSearchClient = createOpenSearchClient();
         createIndex(openSearchClient, "wikimedia-changes");
-
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             _logger.info("Stopping application...");
@@ -58,10 +63,26 @@ public class App {
                     break;
                 }
             } else {
+                int inserted = 0;
                 for (var record : records) {
-                    _logger.info("Key: " + record.key() + ", Value: " + record.value());
-                    _logger.info("Partition: " + record.partition() + ", Offset:" + record.offset());
+                    String json = record.value();
+                    Map<String, Object> document = gson.fromJson(json, Map.class);
+                    Map<String, Object> meta = (Map<String, Object>) document.get("meta");
+                    String id = meta.get("id").toString();
+
+                    try {
+                        openSearchClient.index(i -> i
+                                .index("wikimedia-changes")
+                                .id(id)
+                                .document(document));
+                        inserted++;
+                    } catch (Exception e) {
+                        _logger.error("Error inserting record with id " + id + ": " + e.getMessage(), e);
+                    }                    
                 }
+
+                _logger.info("Inserted " + inserted + " of " + records.count() + " records.");                
+                TimeUnit.SECONDS.sleep(1);
             }
         }
     }
@@ -73,7 +94,7 @@ public class App {
         OpenSearchTransport transport = ApacheHttpClient5TransportBuilder.builder(hosts)
                 .setMapper(new JacksonJsonpMapper())
                 .build();
-        return new OpenSearchClient(transport);        
+        return new OpenSearchClient(transport);
     }
 
     private static void createIndex(OpenSearchClient openSearchClient, String indexName) {
