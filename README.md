@@ -37,3 +37,6 @@ Open the Terminal (from menu *View -> Terminal*) and type the following command
 
 ### Start Debugging
 Just press `F5` or via the menu *Debug -> Start Debugging*. Launch both applications.
+
+### Stopping the Programs
+When you are done, press Ctrl+C (or Command+C on the Mac) to interrupt the program and gracefuly stop debugging.
