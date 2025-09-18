@@ -2,7 +2,9 @@ package wikimedia.consumer;
 
 import java.net.URISyntaxException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
@@ -14,13 +16,15 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.opensearch.client.json.jackson.JacksonJsonpMapper;
 import org.opensearch.client.opensearch.OpenSearchClient;
+import org.opensearch.client.opensearch.core.BulkResponse;
+import org.opensearch.client.opensearch.core.bulk.BulkOperation;
+import org.opensearch.client.opensearch.core.bulk.BulkResponseItem;
 import org.opensearch.client.transport.OpenSearchTransport;
 import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 
 public class App {
@@ -63,25 +67,40 @@ public class App {
                     break;
                 }
             } else {
-                int inserted = 0;
+                List<BulkOperation> bulkOperations = new ArrayList<>();
+
                 for (var record : records) {
                     String json = record.value();
                     Map<String, Object> document = gson.fromJson(json, Map.class);
                     Map<String, Object> meta = (Map<String, Object>) document.get("meta");
                     String id = meta.get("id").toString();
 
-                    try {
-                        openSearchClient.index(i -> i
-                                .index("wikimedia-changes")
-                                .id(id)
-                                .document(document));
-                        inserted++;
-                    } catch (Exception e) {
-                        _logger.error("Error inserting record with id " + id + ": " + e.getMessage(), e);
-                    }                    
+                    bulkOperations.add(
+                            BulkOperation.of(b -> b
+                                    .index(idx -> idx
+                                            .index("wikimedia-changes")
+                                            .id(id)
+                                            .document(document))));
                 }
 
-                _logger.info("Inserted " + inserted + " of " + records.count() + " records.");                
+                if (!bulkOperations.isEmpty()) {
+                    try {
+                        BulkResponse bulkResponse = openSearchClient.bulk(b -> b.operations(bulkOperations));
+
+                        if (bulkResponse.errors()) {
+                            for (BulkResponseItem item : bulkResponse.items()) {
+                                if (item.error() != null) {
+                                    _logger.error("Failed to index document with id {}: {}", item.id(),
+                                            item.error().reason());
+                                }
+                            }
+                        } else {
+                            _logger.info("Successfully inserted {} records", bulkOperations.size());
+                        }
+                    } catch (Exception e) {
+                        _logger.error("Bulk insert error: " + e.getMessage(), e);
+                    }
+                }
                 TimeUnit.SECONDS.sleep(1);
             }
         }
