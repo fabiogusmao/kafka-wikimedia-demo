@@ -1,0 +1,12 @@
+{
+     "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug Consumer",
+            "request": "launch",
+            "mainClass": "wikimedia.consumer.App",
+            "projectName": "app"
+        }
+    ]
+}
